@@ -1,0 +1,33 @@
+{
+  "taken_at": "2026-11-17T10:30:00-05:00",
+  "account": {"portfolio_value": 100000, "cash": 60000},
+  "holdings": [
+    {"ticker": "MSFT", "sector": "Technology", "market_value": 9000}
+  ],
+  "open_puts": [],
+  "tickers": [
+    {
+      "ticker": "KO",
+      "sector": "Consumer Staples",
+      "price": 62.10,
+      "sma200": 60.40,
+      "next_earnings": "2027-02-10",
+      "puts": [
+        {"expiry": "2026-12-18", "strike": 57.5, "bid": 0.30, "ask": 0.33, "open_interest": 2400},
+        {"expiry": "2026-12-18", "strike": 60.0, "bid": 0.78, "ask": 0.82, "open_interest": 5100},
+        {"expiry": "2026-12-18", "strike": 62.5, "bid": 1.75, "ask": 1.82, "open_interest": 3900}
+      ]
+    },
+    {
+      "ticker": "JPM",
+      "sector": "Financials",
+      "price": 305.00,
+      "sma200": 280.00,
+      "next_earnings": "2026-12-11",
+      "puts": [
+        {"expiry": "2026-12-18", "strike": 290.0, "bid": 3.60, "ask": 3.75, "open_interest": 1800},
+        {"expiry": "2026-12-18", "strike": 295.0, "bid": 4.90, "ask": 5.05, "open_interest": 2100}
+      ]
+    }
+  ]
+}

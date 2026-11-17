@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+data/*.db
+data/snapshots/*.json
+!data/snapshots/example.json

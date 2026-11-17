@@ -1,0 +1,38 @@
+# Strategy rules. Every scan records a hash of this file, so each paper trade
+# can be traced back to the exact rules that produced it.
+# All thresholds are illustrative placeholders - tune them deliberately.
+
+universe = ["AAPL", "MSFT", "KO", "JPM"]
+risk_free_rate = 0.04
+
+[sizing]
+max_pct_per_ticker = 10      # stock + put collateral in one ticker, % of portfolio
+max_pct_per_sector = 25
+max_pct_collateral = 50      # all open put collateral, % of portfolio
+
+[entry]
+delta_min = 0.15             # selection rule (absolute put delta)
+delta_max = 0.30
+dte_min = 30                 # selection rule (days to expiry)
+dte_max = 45
+min_annualized_return_pct = 12
+min_iv_rank = 30
+exclude_earnings_in_window = true
+require_above_200dma = true
+
+[liquidity]
+max_spread_pct_of_mid = 10
+min_open_interest = 500
+
+[risk]
+stress_drop_pct = 20         # every underlying falls this much...
+max_stress_loss_pct = 15     # ...and the put book may lose at most this % of portfolio
+
+[exit]
+take_profit_pct = 50         # buy back once this % of the credit is captured
+time_exit_dte = 21
+defend_delta = 0.50
+max_loss_multiple = 2        # close when buying back costs this multiple of the credit
+
+[iv_rank]
+min_history_days = 30        # days of stored IV needed before IV rank is computed
