@@ -113,36 +113,41 @@ def evaluate(
         f"needs ${collateral:,.0f}, cash ${snap.cash:,.0f}",
     ))
 
-    ticker_exposure = collateral
-    ticker_exposure += sum(h.market_value for h in snap.holdings if h.ticker == t.ticker)
-    ticker_exposure += sum(p.collateral for p in snap.open_puts if p.ticker == t.ticker)
-    pct = 100 * ticker_exposure / pv
-    checks.append(_check(
-        "ticker_concentration", pct <= sizing["max_pct_per_ticker"],
-        f"{pct:.1f}% of portfolio if assigned, max {sizing['max_pct_per_ticker']}%",
-    ))
-
-    sector = t.sector
-    if sector is None:
-        checks.append(_check("sector_concentration", None, "sector unknown"))
+    if pv <= 0:
+        for rule in ("ticker_concentration", "sector_concentration", "total_collateral"):
+            checks.append(_check(rule, False, f"portfolio value is ${pv:,.0f}"))
     else:
-        sector_exposure = collateral
-        sector_exposure += sum(
-            h.market_value for h in snap.holdings if snap.sector_of(h.ticker) == sector)
-        sector_exposure += sum(
-            p.collateral for p in snap.open_puts if snap.sector_of(p.ticker) == sector)
-        pct = 100 * sector_exposure / pv
+        ticker_exposure = collateral
+        ticker_exposure += sum(h.market_value for h in snap.holdings if h.ticker == t.ticker)
+        ticker_exposure += sum(p.collateral for p in snap.open_puts if p.ticker == t.ticker)
+        pct = 100 * ticker_exposure / pv
         checks.append(_check(
-            "sector_concentration", pct <= sizing["max_pct_per_sector"],
-            f"{sector} {pct:.1f}% of portfolio if assigned, max {sizing['max_pct_per_sector']}%",
+            "ticker_concentration", pct <= sizing["max_pct_per_ticker"],
+            f"{pct:.1f}% of portfolio if assigned, max {sizing['max_pct_per_ticker']}%",
         ))
 
-    total = collateral + sum(p.collateral for p in snap.open_puts)
-    pct = 100 * total / pv
-    checks.append(_check(
-        "total_collateral", pct <= sizing["max_pct_collateral"],
-        f"put collateral {pct:.1f}% of portfolio, max {sizing['max_pct_collateral']}%",
-    ))
+        sector = t.sector
+        if sector is None:
+            checks.append(_check("sector_concentration", None, "sector unknown"))
+        else:
+            sector_exposure = collateral
+            sector_exposure += sum(
+                h.market_value for h in snap.holdings if snap.sector_of(h.ticker) == sector)
+            sector_exposure += sum(
+                p.collateral for p in snap.open_puts if snap.sector_of(p.ticker) == sector)
+            pct = 100 * sector_exposure / pv
+            checks.append(_check(
+                "sector_concentration", pct <= sizing["max_pct_per_sector"],
+                f"{sector} {pct:.1f}% of portfolio if assigned, "
+                f"max {sizing['max_pct_per_sector']}%",
+            ))
+
+        total = collateral + sum(p.collateral for p in snap.open_puts)
+        pct = 100 * total / pv
+        checks.append(_check(
+            "total_collateral", pct <= sizing["max_pct_collateral"],
+            f"put collateral {pct:.1f}% of portfolio, max {sizing['max_pct_collateral']}%",
+        ))
 
     if not entry["exclude_earnings_in_window"]:
         checks.append(_check("earnings", True, "rule disabled"))
@@ -218,6 +223,8 @@ def _stress(snap: Snapshot, t: TickerSnap, put: PutQuote, risk: dict) -> Check:
         if price is None:
             return _check("stress", None, f"no price for open put on {p.ticker}")
         loss += max(p.strike - price * keep, 0) * 100 * p.contracts
+    if snap.portfolio_value <= 0:
+        return _check("stress", False, f"portfolio value is ${snap.portfolio_value:,.0f}")
     pct = 100 * loss / snap.portfolio_value
     return _check(
         "stress", pct <= risk["max_stress_loss_pct"],

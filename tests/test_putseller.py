@@ -11,13 +11,13 @@ RULES = load_rules(ROOT / "rules.toml")
 
 
 def snap(day="2026-11-17", price=62.10, puts=None, earnings="2027-02-10",
-         sma200=60.40, cash=60000, ticker="KO", open_puts=None):
+         sma200=60.40, cash=60000, ticker="KO", open_puts=None, portfolio_value=100000):
     if puts is None:
         puts = [{"expiry": "2026-12-18", "strike": 60.0, "bid": 0.78, "ask": 0.82,
                  "open_interest": 5100}]
     return parse_snapshot({
         "taken_at": f"{day}T10:30:00-05:00",
-        "account": {"portfolio_value": 100000, "cash": cash},
+        "account": {"portfolio_value": portfolio_value, "cash": cash},
         "open_puts": open_puts or [],
         "tickers": [{"ticker": ticker, "sector": "Consumer Staples", "price": price,
                      "sma200": sma200, "next_earnings": earnings, "puts": puts}],
@@ -92,6 +92,12 @@ class Rules(unittest.TestCase):
         existing = [{"ticker": "KO", "strike": 60, "expiry": "2026-12-18", "contracts": 20,
                      "underlying_price": 62.1}]
         self.assertIn("stress", eval_first(snap(open_puts=existing)).failed)
+
+    def test_empty_account_fails_sizing_rules_instead_of_crashing(self):
+        e = eval_first(snap(portfolio_value=0, cash=0))
+        for rule in ("cash_secured", "ticker_concentration", "sector_concentration",
+                     "total_collateral", "stress"):
+            self.assertIn(rule, e.failed)
 
 
 class PaperLog(unittest.TestCase):
