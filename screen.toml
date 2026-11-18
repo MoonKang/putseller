@@ -1,0 +1,21 @@
+# Stock-quality screen: decides which stocks the daily scan may sell puts on.
+# Run occasionally with /screen. It proposes a new `universe` for rules.toml and
+# the strategy files; nothing changes until the change is confirmed.
+# All thresholds are illustrative placeholders - tune them deliberately.
+
+pool = "SP100"               # scanner index code the candidates come from
+max_stocks = 8               # each stock costs about 8-9 requests per /scan
+max_per_sector = 2
+keep_current = true          # current stocks that still pass keep their place
+rank_by = "iv"               # fill open slots by: "iv" (30-day ATM IV), "iv_rank" or "market_cap"
+
+[criteria]                   # a stock must meet every one; missing data fails
+min_market_cap = 50e9        # dollars
+min_net_margin = 0.05        # profitable
+min_roe = 0.10
+max_lt_debt_to_capital = 0.60
+min_fcf_per_share = 0        # positive free cash flow...
+fcf_exempt_sectors = ["Financial Services"]   # ...except banks, where it means little
+max_beta = 1.5
+min_option_open_interest = 100000             # total puts and calls, all expiries
+max_price = 500              # one contract (price x 100) must fit the per-ticker cap

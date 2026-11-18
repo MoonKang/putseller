@@ -9,7 +9,9 @@ Rules split into two groups:
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from datetime import date
 
 from . import bs
 from .config import Rules
@@ -20,6 +22,7 @@ FILTER_RULES = (
     "watchlist", "cash_secured", "ticker_concentration", "sector_concentration",
     "total_collateral", "earnings", "spread", "open_interest",
     "annualized_return", "iv_rank", "trend", "stress",
+    "iv_vs_realized", "vix_level", "vix_rank",
 )
 
 
@@ -73,6 +76,92 @@ def greeks(put: PutQuote, price: float, dte: int, r: float) -> tuple[float | Non
     return abs(bs.put_delta(price, put.strike, t, r, iv)), iv
 
 
+def atm_iv(t: TickerSnap, today: date, r: float) -> float | None:
+    """At-the-money IV in the expiry closest to 30 days out.
+
+    Interpolates by strike between the nearest put at or below the price and
+    the nearest put above it. Falls back to the single nearest put when one
+    side is missing.
+    """
+    expiries = {p.expiry for p in t.puts if (p.expiry - today).days >= 7}
+    if not expiries:
+        return None
+    expiry = min(expiries, key=lambda e: abs((e - today).days - 30))
+    dte = (expiry - today).days
+    ivs = []
+    for p in t.puts:
+        if p.expiry == expiry and p.bid > 0:
+            _, iv = greeks(p, t.price, dte, r)
+            if iv is not None:
+                ivs.append((p.strike, iv))
+    if not ivs:
+        return None
+    below = [s for s in ivs if s[0] <= t.price]
+    above = [s for s in ivs if s[0] > t.price]
+    if below and above:
+        (k1, v1), (k2, v2) = max(below), min(above)
+        return v1 + (v2 - v1) * (t.price - k1) / (k2 - k1)
+    return min(ivs, key=lambda s: abs(s[0] - t.price))[1]
+
+
+def realized_vol(closes: tuple[float, ...], days: int = 20) -> float | None:
+    """Annualized standard deviation of the last `days` daily log returns."""
+    closes = closes[-(days + 1):]
+    if len(closes) < days + 1 or min(closes) <= 0:
+        return None
+    rets = [math.log(b / a) for a, b in zip(closes, closes[1:])]
+    mean = sum(rets) / len(rets)
+    var = sum((x - mean) ** 2 for x in rets) / (len(rets) - 1)
+    return math.sqrt(var * 252)
+
+
+def vix_rank(vix: float | None, history: tuple[float, ...]) -> float | None:
+    """Where today's VIX sits in its range over the supplied history, 0-100."""
+    if vix is None or len(history) < 20:
+        return None
+    lo, hi = min(history + (vix,)), max(history + (vix,))
+    return None if hi <= lo else 100 * (vix - lo) / (hi - lo)
+
+
+def _timing(snap: Snapshot, t: TickerSnap, atm: float | None, rules: Rules) -> list[Check]:
+    timing = rules.raw.get("timing", {})
+    checks = []
+
+    if "min_iv_rv_ratio" not in timing:
+        checks.append(_check("iv_vs_realized", True, "rule disabled"))
+    else:
+        rv = realized_vol(t.closes)
+        if atm is None or rv is None or rv <= 0:
+            checks.append(_check("iv_vs_realized", None, "IV or 20-day price history unknown"))
+        else:
+            ratio = atm / rv
+            checks.append(_check(
+                "iv_vs_realized", ratio >= timing["min_iv_rv_ratio"],
+                f"IV {atm:.0%} / realized {rv:.0%} = {ratio:.2f}, min {timing['min_iv_rv_ratio']}",
+            ))
+
+    if "max_vix" not in timing:
+        checks.append(_check("vix_level", True, "rule disabled"))
+    elif snap.vix is None:
+        checks.append(_check("vix_level", None, "VIX unknown"))
+    else:
+        checks.append(_check(
+            "vix_level", snap.vix <= timing["max_vix"],
+            f"VIX {snap.vix:.2f}, max {timing['max_vix']}",
+        ))
+
+    if "min_vix_rank" not in timing:
+        checks.append(_check("vix_rank", True, "rule disabled"))
+    else:
+        rank = vix_rank(snap.vix, snap.vix_closes)
+        checks.append(_check(
+            "vix_rank", None if rank is None else rank >= timing["min_vix_rank"],
+            "VIX history unknown" if rank is None
+            else f"VIX rank {rank:.0f} over the past year, min {timing['min_vix_rank']}",
+        ))
+    return checks
+
+
 def _check(rule: str, ok: bool | None, detail: str) -> Check:
     return Check(rule, "na" if ok is None else "pass" if ok else "fail", detail)
 
@@ -83,6 +172,7 @@ def evaluate(
     put: PutQuote,
     rules: Rules,
     iv_rank: float | None = None,
+    atm: float | None = None,
 ) -> Evaluation:
     entry, sizing, liq, risk = rules["entry"], rules["sizing"], rules["liquidity"], rules["risk"]
     dte = (put.expiry - snap.date).days
@@ -207,6 +297,9 @@ def evaluate(
         ))
 
     checks.append(_stress(snap, t, put, risk))
+    if atm is None:
+        atm = atm_iv(t, snap.date, rules.risk_free_rate)
+    checks.extend(_timing(snap, t, atm, rules))
 
     return Evaluation(
         ticker=t.ticker, put=put, underlying=t.price, dte=dte, delta=delta, iv=iv,

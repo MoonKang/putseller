@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from . import paper, report, store
+from . import paper, report, screen, store
 from .config import load_rules
 from .models import load_snapshot
 
@@ -20,7 +21,18 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("report", help="summarize the whole log")
 
+    scr = sub.add_parser("screen", help="propose a stock universe from a saved scanner result")
+    scr.add_argument("scan", help="scanner result JSON (data/screens/<date>.json)")
+    scr.add_argument("--config", default="screen.toml")
+    scr.add_argument("--rules", default="rules.toml", help="where the current universe is read")
+    scr.add_argument("--apply", action="store_true",
+                     help="write the proposed universe into rules.toml and strategies/*.toml")
+
     args = parser.parse_args(argv)
+    if args.command == "screen":
+        targets = [Path(args.rules), *sorted(Path("strategies").glob("*.toml"))] if args.apply else None
+        print(screen.run(args.scan, args.config, args.rules, targets))
+        return 0
     conn = store.connect(args.db)
     try:
         if args.command == "run":

@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, timedelta
 
 from .config import Rules
 from .models import Snapshot, TickerSnap
-from .rules import Evaluation, evaluate, greeks
+from .rules import Evaluation, atm_iv, evaluate, greeks
 
 
 @dataclass
@@ -31,6 +31,12 @@ def run(conn: sqlite3.Connection, snap: Snapshot, rules: Rules,
         raise ValueError(f"snapshot taken at {taken_at} was already logged")
     if last and taken_at < last:
         raise ValueError(f"snapshot ({taken_at}) is older than the latest logged scan ({last})")
+
+    # A strategy file may size its paper account itself instead of using the real one.
+    acct = rules.raw.get("paper_account")
+    if acct:
+        snap = replace(snap, portfolio_value=float(acct["portfolio_value"]),
+                       cash=float(acct["cash"]))
 
     with conn:
         scan_id = conn.execute(
@@ -117,22 +123,8 @@ def _exit_row(p, label: str, reason: str, pnl: float) -> dict:
 
 # ---------------------------------------------------------------- IV rank
 
-def _atm_iv(t: TickerSnap, today: date, r: float) -> float | None:
-    """IV of the put nearest the money in the expiry closest to 30 days out."""
-    expiries = {p.expiry for p in t.puts if (p.expiry - today).days >= 7}
-    if not expiries:
-        return None
-    expiry = min(expiries, key=lambda e: abs((e - today).days - 30))
-    puts = [p for p in t.puts if p.expiry == expiry and p.bid > 0]
-    for put in sorted(puts, key=lambda p: abs(p.strike - t.price)):
-        _, iv = greeks(put, t.price, (expiry - today).days, r)
-        if iv is not None:
-            return iv
-    return None
-
-
 def _iv_rank(conn, t: TickerSnap, today: date, rules: Rules) -> float | None:
-    iv = _atm_iv(t, today, rules.risk_free_rate)
+    iv = atm_iv(t, today, rules.risk_free_rate)
     if iv is not None:
         conn.execute("INSERT OR REPLACE INTO iv_history VALUES (?, ?, ?)",
                      (t.ticker, today.isoformat(), iv))
@@ -153,8 +145,11 @@ def _iv_rank(conn, t: TickerSnap, today: date, rules: Rules) -> float | None:
 def _scan(conn, snap: Snapshot, rules: Rules, result: RunResult) -> None:
     result.missing_tickers = sorted(rules.universe - set(snap.tickers))
     for t in snap.tickers.values():
+        if t.ticker.upper() not in rules.universe:
+            continue   # fetched only to mark a position on a dropped ticker
         rank = _iv_rank(conn, t, snap.date, rules)
-        selected = [e for e in (evaluate(snap, t, p, rules, rank) for p in t.puts)
+        atm = atm_iv(t, snap.date, rules.risk_free_rate)
+        selected = [e for e in (evaluate(snap, t, p, rules, rank, atm) for p in t.puts)
                     if e.selected]
         for e in selected:
             _log_evaluation(conn, result, e)

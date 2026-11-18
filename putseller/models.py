@@ -35,6 +35,7 @@ class TickerSnap:
     iv_rank: float | None = None
     next_earnings: date | None = None
     puts: tuple[PutQuote, ...] = ()
+    closes: tuple[float, ...] = ()   # recent daily closes, oldest first, for realized vol
 
     def find_put(self, expiry: date, strike: float) -> PutQuote | None:
         for p in self.puts:
@@ -73,6 +74,8 @@ class Snapshot:
     holdings: tuple[Holding, ...] = ()
     open_puts: tuple[OpenPut, ...] = ()
     tickers: dict[str, TickerSnap] = field(default_factory=dict)
+    vix: float | None = None
+    vix_closes: tuple[float, ...] = ()   # about a year of daily VIX closes, for VIX rank
 
     @property
     def date(self) -> date:
@@ -133,7 +136,9 @@ def parse_snapshot(raw: dict) -> Snapshot:
             iv_rank=t.get("iv_rank"),
             next_earnings=_d(t.get("next_earnings")),
             puts=puts,
+            closes=tuple(float(c) for c in t.get("closes") or ()),
         )
+    market = raw.get("market") or {}
     return Snapshot(
         taken_at=datetime.fromisoformat(raw["taken_at"]),
         portfolio_value=_num(account, "portfolio_value", "account"),
@@ -154,6 +159,8 @@ def parse_snapshot(raw: dict) -> Snapshot:
             for p in raw.get("open_puts", [])
         ),
         tickers=tickers,
+        vix=market.get("vix"),
+        vix_closes=tuple(float(c) for c in market.get("vix_closes_1y") or ()),
     )
 
 

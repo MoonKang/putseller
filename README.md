@@ -39,7 +39,9 @@ trades yourself in the Robinhood app.
 2. **Scans** every put in the snapshot and logs each contract inside the
    delta/expiry window with its verdict and the rules it failed.
 
-The log lives in `data/paper.db` (SQLite, not committed).
+The log lives in `data/paper.db` (SQLite, not committed). Snapshots in
+`data/snapshots/` are committed: they are the chain archive, and any log can be
+rebuilt by re-running them in order.
 
 ## What gets paper traded
 
@@ -65,6 +67,44 @@ rules that produced it.
 
 Portfolio rules (cash, concentration, collateral, stress) are checked against the
 real account in the snapshot. Paper positions do not use up paper cash.
+
+### Comparing strategies
+
+Each file in `strategies/` is a complete rules file for one paper strategy.
+Its `[paper_account]` section (`portfolio_value`, `cash`) replaces the real
+account, so a strategy can be tested before the real account is funded. Give
+each strategy its own log:
+
+```bash
+python3 -m putseller --db data/paper-moderate.db run <snapshot> --rules strategies/moderate.toml
+```
+
+```bash
+python3 -m putseller --db data/paper-moderate.db report
+```
+
+`rules.toml` has no `[paper_account]`, so `/scan` proposes real trades only
+from the real account.
+
+### Choosing the universe (stock-quality screen)
+
+Which stocks get scanned is decided separately and occasionally, not on every
+scan. `/screen` saves a Robinhood scanner pull of the S&P 100 to
+`data/screens/<date>.json`, then:
+
+```bash
+python3 -m putseller screen data/screens/<date>.json
+```
+
+checks each stock against `screen.toml` (size, profitability, debt, free cash
+flow, beta, option liquidity, price; missing data fails), ranks the passing
+stocks by IV, and fills up to `max_stocks` with at most `max_per_sector` per
+sector and one share class per company. Current stocks that still pass keep
+their place. It prints the proposal and changes nothing; `--apply` writes the
+new `universe` line into `rules.toml` and every `strategies/*.toml`.
+
+A dropped ticker with open paper positions is still marked until they settle
+(`/scan` keeps fetching it), but no new positions open on it.
 
 ## Snapshot format
 
@@ -94,6 +134,11 @@ put's `expiry`, `strike`, `bid`, `ask`. Everything else is optional.
   (European, no dividends, so approximate).
 - `iv_rank` missing: computed from the at-the-money IV stored on each run, once
   `iv_rank.min_history_days` days exist.
+- `closes` (per ticker, last 21 daily closes, oldest first) feeds the
+  `iv_vs_realized` rule: at-the-money IV divided by 20-day realized volatility.
+- `market.vix` and `market.vix_closes_1y` (about a year of daily closes) feed
+  the `vix_level` and `vix_rank` rules. All three are set under `[timing]` in
+  the rules file; deleting a key there disables that rule.
 - A snapshot must keep including the tickers and contracts of open paper
   positions, or they cannot be marked. Missing ones are listed in the run output.
 

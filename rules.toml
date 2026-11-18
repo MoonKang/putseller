@@ -2,7 +2,7 @@
 # can be traced back to the exact rules that produced it.
 # All thresholds are illustrative placeholders - tune them deliberately.
 
-universe = ["AAPL", "MSFT", "KO", "JPM"]
+universe = ["AAPL", "JPM", "KO", "AMAT", "GOOGL", "COP", "NFLX", "GE"]
 risk_free_rate = 0.04
 
 [sizing]
@@ -33,6 +33,11 @@ take_profit_pct = 50         # buy back once this % of the credit is captured
 time_exit_dte = 21
 defend_delta = 0.50
 max_loss_multiple = 2        # close when buying back costs this multiple of the credit
+
+[timing]                     # market-timing filters; delete a key to disable that rule
+min_iv_rv_ratio = 1.0        # ATM IV / 20-day realized vol: premium must at least cover recent moves
+max_vix = 35                 # skip new sales in a panic regime
+min_vix_rank = 20            # VIX position in its 1-year range, 0-100: skip when premiums are cheapest
 
 [iv_rank]
 min_history_days = 30        # days of stored IV needed before IV rank is computed
