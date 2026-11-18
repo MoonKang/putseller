@@ -20,6 +20,18 @@ python3 -m putseller report
 python3 -m unittest discover -s tests
 ```
 
+### Live data via the Robinhood Trading MCP
+
+`.mcp.json` registers the Robinhood Trading MCP
+(`https://agent.robinhood.com/mcp/trading`) for this project. In Claude Code,
+run `/mcp`, select `robinhood-trading`, and authenticate. Then run `/scan`.
+
+`/scan` (in `.claude/skills/scan/SKILL.md`) builds a snapshot from live data,
+runs `putseller run` on it, and calls `review_option_order` to preview each
+contract that passed. **It never places orders.** `.claude/settings.json`
+blocks every MCP tool that places, cancels, or exercises. You place approved
+trades yourself in the Robinhood app.
+
 `run` does two things with one snapshot:
 
 1. **Marks** every open paper position: applies the exit rules, and settles
